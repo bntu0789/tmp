@@ -15,6 +15,7 @@ INSTALL_DIR="$HOME/day_subs"
 VENV_DIR="$INSTALL_DIR/venv"
 ZIP_URL="https://raw.githubusercontent.com/bntu0789/tmp/main/subs/day_sub.zip"
 ZIP_FILE="/tmp/day_sub.zip"
+TEMP_VENV="/tmp/temp_venv"
 CRON_JOB="0 * * * * cd $INSTALL_DIR && $VENV_DIR/bin/python day_subs.py --github-upload >> $INSTALL_DIR/cron.log 2>&1"
 CRON_COMMENT="# day_subs 自动更新订阅"
 ZIP_PASSWORD="ds20250520"  # 预设密码
@@ -33,33 +34,48 @@ check_command() {
 check_python_venv() {
     if ! python3 -m venv --help &> /dev/null; then
         echo -e "${RED}错误: Python3 venv模块未安装。请安装后再试。${NC}"
-        echo "可以使用命令: sudo apt-get install python3-venv"
+        echo "可以使用命令: sudo apt-get install python3-venv python3-full"
         return 1
     fi
     return 0
 }
 
-# 检查并安装pyzipper
-check_and_install_pyzipper() {
-    if ! python3 -c "import pyzipper" &> /dev/null; then
-        echo -e "${YELLOW}pyzipper未安装，正在安装...${NC}"
-        pip3 install pyzipper
-        if [ $? -ne 0 ]; then
-            echo -e "${RED}安装pyzipper失败${NC}"
-            return 1
-        fi
-    fi
-    return 0
-}
-
-# 使用Python和pyzipper解压AES加密ZIP
-extract_zip_with_pyzipper() {
+# 在临时虚拟环境中安装并使用pyzipper解压文件
+setup_temp_venv_and_extract() {
     local zip_file=$1
     local extract_dir=$2
     local password=$3
     
-    # 创建并执行Python脚本
-    python3 - << EOF
+    echo -e "${YELLOW}创建临时Python环境并安装pyzipper...${NC}"
+    
+    # 检查是否存在旧的临时环境并删除
+    if [ -d "$TEMP_VENV" ]; then
+        rm -rf "$TEMP_VENV"
+    fi
+    
+    # 创建临时虚拟环境
+    python3 -m venv "$TEMP_VENV"
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}创建临时虚拟环境失败${NC}"
+        return 1
+    fi
+    
+    # 激活临时环境并安装pyzipper
+    source "$TEMP_VENV/bin/activate"
+    pip install --upgrade pip > /dev/null 2>&1
+    echo -e "${YELLOW}在虚拟环境中安装pyzipper...${NC}"
+    pip install pyzipper > /dev/null 2>&1
+    
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}在虚拟环境中安装pyzipper失败${NC}"
+        deactivate
+        rm -rf "$TEMP_VENV"
+        return 1
+    fi
+    
+    # 使用Python和pyzipper解压文件
+    echo -e "${YELLOW}解压文件...${NC}"
+    python - << EOF
 import pyzipper
 import os
 import sys
@@ -70,7 +86,7 @@ try:
     
     # 使用pyzipper解压
     with pyzipper.AESZipFile("$zip_file") as zipf:
-        zipf.pwd = "$password".encode('utf-8')
+        zipf.pwd = b"$password"
         zipf.extractall("$extract_dir")
     
     print("文件已成功解压")
@@ -79,7 +95,14 @@ except Exception as e:
     print(f"解压失败: {e}")
     sys.exit(1)
 EOF
-    return $?
+    
+    local result=$?
+    
+    # 清理临时环境
+    deactivate
+    rm -rf "$TEMP_VENV"
+    
+    return $result
 }
 
 # 显示帮助信息
@@ -125,13 +148,9 @@ install_program() {
     # 检查必要的命令
     check_command wget wget || return 1
     check_command python3 python3 || return 1
-    check_command pip3 python3-pip || return 1
     
     # 检查Python venv模块
     check_python_venv || return 1
-    
-    # 检查并安装pyzipper
-    check_and_install_pyzipper || return 1
     
     # 创建安装目录
     mkdir -p "$INSTALL_DIR"
@@ -158,8 +177,7 @@ install_program() {
     fi
     
     # 解压文件
-    echo -e "${YELLOW}正在解压文件...${NC}"
-    extract_zip_with_pyzipper "$ZIP_FILE" "$INSTALL_DIR" "$ZIP_PASSWORD"
+    setup_temp_venv_and_extract "$ZIP_FILE" "$INSTALL_DIR" "$ZIP_PASSWORD"
     
     if [ $? -ne 0 ]; then
         echo -e "${RED}解压失败${NC}"
