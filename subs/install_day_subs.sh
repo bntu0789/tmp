@@ -13,7 +13,7 @@ NC='\033[0m' # 无颜色
 # 配置
 INSTALL_DIR="$HOME/day_subs"
 VENV_DIR="$INSTALL_DIR/venv"
-ZIP_URL="https://github.com/bntu0789/tmp/raw/refs/heads/main/subs/day_sub.zip"
+ZIP_URL="https://raw.githubusercontent.com/bntu0789/tmp/main/subs/day_sub.zip"
 ZIP_FILE="/tmp/day_sub.zip"
 CRON_JOB="0 * * * * cd $INSTALL_DIR && $VENV_DIR/bin/python day_subs.py --github-upload >> $INSTALL_DIR/cron.log 2>&1"
 CRON_COMMENT="# day_subs 自动更新订阅"
@@ -23,6 +23,15 @@ check_command() {
     if ! command -v $1 &> /dev/null; then
         echo -e "${RED}错误: $1 未安装。请安装后再试。${NC}"
         echo "可以使用命令: sudo apt-get install $2"
+        exit 1
+    fi
+}
+
+# 检查Python venv模块是否可用
+check_python_venv() {
+    if ! python3 -m venv --help &> /dev/null; then
+        echo -e "${RED}错误: Python3 venv模块未安装。请安装后再试。${NC}"
+        echo "可以使用命令: sudo apt-get install python3-venv"
         exit 1
     fi
 }
@@ -74,7 +83,8 @@ install_program() {
     check_command wget wget
     check_command unzip unzip
     check_command python3 python3
-    check_command python3-venv python3-venv
+    # 检查Python venv模块
+    check_python_venv
     check_command pip3 python3-pip
     
     # 创建安装目录
